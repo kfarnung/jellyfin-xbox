@@ -257,4 +257,25 @@ You might encounter bugs when running on a PC.</value>
   <data name="Settings.Values.ForceEnableTV.Text" xml:space="preserve">
     <value>Force TV Mode</value>
   </data>
+  <data name="Settings.Values.NativeVideoPlayback.Text" xml:space="preserve">
+    <value>Use the native video player for Jellyfin video playback (experimental)</value>
+  </data>
+  <data name="Settings.Values.NativeAudioPassthrough.Text" xml:space="preserve">
+    <value>Enable audio passthrough for passthrough-only codecs</value>
+  </data>
+  <data name="Settings.Values.AllowAc3.Text" xml:space="preserve">
+    <value>Allow Dolby Digital (AC-3) direct play</value>
+  </data>
+  <data name="Settings.Values.AllowEac3.Text" xml:space="preserve">
+    <value>Allow Dolby Digital Plus (E-AC-3) direct play</value>
+  </data>
+  <data name="Settings.Values.AllowDts.Text" xml:space="preserve">
+    <value>Allow DTS passthrough</value>
+  </data>
+  <data name="Settings.Values.AllowTrueHd.Text" xml:space="preserve">
+    <value>Allow Dolby TrueHD passthrough</value>
+  </data>
+  <data name="NativePlayback.Overlay.Shortcuts.Text" xml:space="preserve">
+    <value>A Play/Pause  Left/Right +/-10s  B Back</value>
+  </data>
 </root>

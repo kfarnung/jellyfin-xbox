@@ -150,10 +150,13 @@
     <Compile Include="Core\FullScreenManager.cs" />
     <Compile Include="Core\Contract\IFullScreenManager.cs" />
     <Compile Include="Core\Contract\IMessageHandler.cs" />
+    <Compile Include="Core\Contract\INativeVideoPlayerService.cs" />
     <Compile Include="Core\Contract\INativeShellScriptLoader.cs" />
+    <Compile Include="Core\Contract\NativePlaybackHostMessageEventArgs.cs" />
     <Compile Include="Core\Contract\ISettingsManager.cs" />
     <Compile Include="Core\Contract\IServerDiscovery.cs" />
     <Compile Include="Core\MessageHandler.cs" />
+    <Compile Include="Core\NativeVideoPlayerService.cs" />
     <Compile Include="Core\NativeShellScriptLoader.cs" />
     <Compile Include="Core\FileBackedLoggerProvider.cs" />
     <Compile Include="Core\SettingsManager.cs" />

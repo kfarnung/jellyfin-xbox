@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Core.Contract;
@@ -21,6 +22,7 @@ public sealed class FullScreenManager : IFullScreenManager
     private readonly ApplicationView _applicationView;
     private readonly Frame _frame;
     private readonly DisplayRequest _displayRequest;
+    private bool _displayRequestActive;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FullScreenManager"/> class.
@@ -38,6 +40,10 @@ public sealed class FullScreenManager : IFullScreenManager
     private async Task SwitchToBestDisplayMode(uint videoWidth, uint videoHeight, double videoFrameRate, HdmiDisplayHdrOption hdmiDisplayHdrOption)
     {
         var hdmiDisplayInformation = HdmiDisplayInformation.GetForCurrentView();
+        if (hdmiDisplayInformation == null)
+        {
+            return;
+        }
 
         var bestDisplayMode =
             GetBestDisplayMode(hdmiDisplayInformation, videoWidth, videoHeight, videoFrameRate, hdmiDisplayHdrOption);
@@ -122,6 +128,11 @@ public sealed class FullScreenManager : IFullScreenManager
 
     private IEnumerable<HdmiDisplayMode> GetBestDisplayMode(HdmiDisplayInformation hdmiDisplayInformation, uint videoWidth, uint videoHeight, double videoFrameRate, HdmiDisplayHdrOption hdmiDisplayHdrOption)
     {
+        if (hdmiDisplayInformation == null)
+        {
+            return Array.Empty<HdmiDisplayMode>();
+        }
+
         var supportedHdmiDisplayModes = hdmiDisplayInformation.GetSupportedDisplayModes().Where(e => !e.StereoEnabled);
 
         // `GetHdmiDisplayHdrOption(...)` ensures the HdmiDisplayHdrOption is always a mode the display supports
@@ -154,7 +165,11 @@ public sealed class FullScreenManager : IFullScreenManager
 
     private async Task SetDefaultDisplayModeAsync()
     {
-        await HdmiDisplayInformation.GetForCurrentView()?.SetDefaultDisplayModeAsync();
+        var hdmiDisplayInformation = HdmiDisplayInformation.GetForCurrentView();
+        if (hdmiDisplayInformation != null)
+        {
+            await hdmiDisplayInformation.SetDefaultDisplayModeAsync();
+        }
     }
 
     /// <summary>
@@ -170,19 +185,23 @@ public sealed class FullScreenManager : IFullScreenManager
             {
                 try
                 {
-                    var videoWidth = (uint)args.GetNamedNumber("videoWidth");
-                    var videoHeight = (uint)args.GetNamedNumber("videoHeight");
-                    var videoFrameRate = args.GetNamedNumber("videoFrameRate");
-                    var videoRangeType = args.GetNamedString("videoRangeType");
+                    var videoWidth = GetNamedUInt32(args, "videoWidth");
+                    var videoHeight = GetNamedUInt32(args, "videoHeight");
+                    var videoFrameRate = GetNamedDouble(args, "videoFrameRate");
+                    var videoRangeType = GetNamedString(args, "videoRangeType");
 
                     var hdmiDisplayInformation = HdmiDisplayInformation.GetForCurrentView();
                     var hdmiDisplayHdrOption = GetHdmiDisplayHdrOption(hdmiDisplayInformation, videoRangeType);
                     await SwitchToBestDisplayMode(videoWidth, videoHeight, videoFrameRate, hdmiDisplayHdrOption).ConfigureAwait(false);
-                    _displayRequest.RequestActive();
+                    if (!_displayRequestActive)
+                    {
+                        _displayRequest.RequestActive();
+                        _displayRequestActive = true;
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine("Error during SwitchToBestDisplayMode", ex);
+                    Debug.WriteLine($"Error during SwitchToBestDisplayMode: {ex}");
                 }
             }
             else
@@ -211,6 +230,64 @@ public sealed class FullScreenManager : IFullScreenManager
             _applicationView.ExitFullScreenMode();
         }
 
-        _displayRequest.RequestRelease();
+        if (_displayRequestActive)
+        {
+            _displayRequest.RequestRelease();
+            _displayRequestActive = false;
+        }
+    }
+
+    private static double GetNamedDouble(JsonObject jsonObject, string key, double defaultValue = 0)
+    {
+        if (jsonObject == null || !jsonObject.ContainsKey(key))
+        {
+            return defaultValue;
+        }
+
+        var value = jsonObject[key];
+        if (value == null)
+        {
+            return defaultValue;
+        }
+
+        if (value.ValueType == JsonValueType.Number)
+        {
+            return value.GetNumber();
+        }
+
+        if (value.ValueType == JsonValueType.String
+            && double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedValue))
+        {
+            return parsedValue;
+        }
+
+        return defaultValue;
+    }
+
+    private static uint GetNamedUInt32(JsonObject jsonObject, string key, uint defaultValue = 0)
+    {
+        var value = GetNamedDouble(jsonObject, key, defaultValue);
+        if (double.IsNaN(value) || double.IsInfinity(value) || value < 0)
+        {
+            return defaultValue;
+        }
+
+        return value > uint.MaxValue ? uint.MaxValue : (uint)Math.Round(value);
+    }
+
+    private static string GetNamedString(JsonObject jsonObject, string key, string defaultValue = "")
+    {
+        if (jsonObject == null || !jsonObject.ContainsKey(key))
+        {
+            return defaultValue;
+        }
+
+        var value = jsonObject[key];
+        if (value == null || value.ValueType != JsonValueType.String)
+        {
+            return defaultValue;
+        }
+
+        return value.GetString();
     }
 }

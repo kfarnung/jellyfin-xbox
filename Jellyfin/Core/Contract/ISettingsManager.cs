@@ -31,6 +31,36 @@ public interface ISettingsManager
     bool AutoRefreshRate { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether native video playback should be used for Jellyfin video items.
+    /// </summary>
+    bool EnableNativeVideoPlayback { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether passthrough should be used for passthrough-only codecs.
+    /// </summary>
+    bool EnableNativeAudioPassthrough { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether AC3 should be direct played through the native player.
+    /// </summary>
+    bool AllowAc3DirectPlay { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether E-AC3 should be direct played through the native player.
+    /// </summary>
+    bool AllowEac3DirectPlay { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether DTS passthrough is allowed.
+    /// </summary>
+    bool AllowDtsPassthrough { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether Dolby TrueHD passthrough is allowed.
+    /// </summary>
+    bool AllowTrueHdPassthrough { get; set; }
+
+    /// <summary>
     /// Gets the value of a property from the settings container.
     /// </summary>
     /// <typeparam name="T">The type of the property value.</typeparam>

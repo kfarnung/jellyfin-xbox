@@ -16,6 +16,16 @@ namespace Jellyfin.Core;
 public class NativeShellScriptLoader : INativeShellScriptLoader
 {
     private static readonly Uri StorageUri = new Uri("ms-appx:///Resources/winuwp.js");
+    private readonly ISettingsManager _settingsManager;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NativeShellScriptLoader"/> class.
+    /// </summary>
+    /// <param name="settingsManager">The settings manager used to serialize shell configuration flags.</param>
+    public NativeShellScriptLoader(ISettingsManager settingsManager)
+    {
+        _settingsManager = settingsManager;
+    }
 
     /// <summary>
     /// LoadNativeShellScript.
@@ -56,6 +66,13 @@ public class NativeShellScriptLoader : INativeShellScriptLoader
             nativeShellScript = nativeShellScript.Replace("SUPPORTS_HDR", "undefined");
             nativeShellScript = nativeShellScript.Replace("SUPPORTS_DOVI", "undefined");
         }
+
+        nativeShellScript = nativeShellScript.Replace("NATIVE_VIDEO_PLAYBACK_ENABLED", _settingsManager.EnableNativeVideoPlayback.ToString().ToLowerInvariant());
+        nativeShellScript = nativeShellScript.Replace("NATIVE_AUDIO_PASSTHROUGH_ENABLED", _settingsManager.EnableNativeAudioPassthrough.ToString().ToLowerInvariant());
+        nativeShellScript = nativeShellScript.Replace("NATIVE_ALLOW_AC3", _settingsManager.AllowAc3DirectPlay.ToString().ToLowerInvariant());
+        nativeShellScript = nativeShellScript.Replace("NATIVE_ALLOW_EAC3", _settingsManager.AllowEac3DirectPlay.ToString().ToLowerInvariant());
+        nativeShellScript = nativeShellScript.Replace("NATIVE_ALLOW_DTS", _settingsManager.AllowDtsPassthrough.ToString().ToLowerInvariant());
+        nativeShellScript = nativeShellScript.Replace("NATIVE_ALLOW_TRUEHD", _settingsManager.AllowTrueHdPassthrough.ToString().ToLowerInvariant());
 
         return nativeShellScript;
     }

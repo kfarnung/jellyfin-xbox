@@ -6,12 +6,14 @@ using System.Reflection;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Jellyfin.Core;
 using Jellyfin.Core.Contract;
 using Jellyfin.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
+using Windows.Data.Json;
 using Windows.Graphics.Display.Core;
 using Windows.UI.Core;
 using Windows.UI.Popups;
@@ -25,12 +27,19 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 {
     private readonly IGamepadManager _gamepadManager;
     private readonly CoreDispatcher _coreDispatcher;
+    private readonly IMessenger _messenger;
     private readonly IStringLocalizer<Translations> _stringLocalizer;
     private readonly IDisposable _navigationHandler;
     private HdmiDisplayInformation _currentHdmiDisplayInformation;
     private bool _autoRefreshRate;
     private bool _autoResolution;
     private bool _forceEnableTvMode;
+    private bool _enableNativeVideoPlayback;
+    private bool _enableNativeAudioPassthrough;
+    private bool _allowAc3DirectPlay;
+    private bool _allowEac3DirectPlay;
+    private bool _allowDtsPassthrough;
+    private bool _allowTrueHdPassthrough;
     private HdmiDisplayMode _currentDisplayMode;
 
     /// <summary>
@@ -38,15 +47,23 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     /// </summary>
     /// <param name="gamepadManager">The <see cref="IGamepadManager"/> instance used to handle gamepad-related events.</param>
     /// <param name="coreDispatcher">The Dispatcher.</param>
+    /// <param name="messenger">The Messenger service.</param>
     /// <param name="stringLocalizer">The localizer service.</param>
-    public SettingsViewModel(IGamepadManager gamepadManager, CoreDispatcher coreDispatcher, IStringLocalizer<Translations> stringLocalizer)
+    public SettingsViewModel(IGamepadManager gamepadManager, CoreDispatcher coreDispatcher, IMessenger messenger, IStringLocalizer<Translations> stringLocalizer)
     {
         _gamepadManager = gamepadManager;
         _coreDispatcher = coreDispatcher;
+        _messenger = messenger;
         _stringLocalizer = stringLocalizer;
         AutoRefreshRate = Central.Settings.AutoRefreshRate;
         AutoResolution = Central.Settings.AutoResolution;
         ForceEnableTvMode = Central.Settings.ForceEnableTvMode;
+        EnableNativeVideoPlayback = Central.Settings.EnableNativeVideoPlayback;
+        EnableNativeAudioPassthrough = Central.Settings.EnableNativeAudioPassthrough;
+        AllowAc3DirectPlay = Central.Settings.AllowAc3DirectPlay;
+        AllowEac3DirectPlay = Central.Settings.AllowEac3DirectPlay;
+        AllowDtsPassthrough = Central.Settings.AllowDtsPassthrough;
+        AllowTrueHdPassthrough = Central.Settings.AllowTrueHdPassthrough;
 
         _navigationHandler = _gamepadManager.ObserveBackEvent(ModalPage_BackRequested, -10);
         try
@@ -101,6 +118,83 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         get => _forceEnableTvMode;
         set => SetProperty(ref _forceEnableTvMode, value);
     }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether native video playback should be used for supported video items.
+    /// </summary>
+    public bool EnableNativeVideoPlayback
+    {
+        get => _enableNativeVideoPlayback;
+        set
+        {
+            if (SetProperty(ref _enableNativeVideoPlayback, value))
+            {
+                OnPropertyChanged(nameof(CanConfigureNativeCodecOptions));
+                OnPropertyChanged(nameof(CanConfigureNativePassthroughOptions));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether passthrough should be used for passthrough-only codecs.
+    /// </summary>
+    public bool EnableNativeAudioPassthrough
+    {
+        get => _enableNativeAudioPassthrough;
+        set
+        {
+            if (SetProperty(ref _enableNativeAudioPassthrough, value))
+            {
+                OnPropertyChanged(nameof(CanConfigureNativePassthroughOptions));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether AC3 should be direct played through the native player.
+    /// </summary>
+    public bool AllowAc3DirectPlay
+    {
+        get => _allowAc3DirectPlay;
+        set => SetProperty(ref _allowAc3DirectPlay, value);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether E-AC3 should be direct played through the native player.
+    /// </summary>
+    public bool AllowEac3DirectPlay
+    {
+        get => _allowEac3DirectPlay;
+        set => SetProperty(ref _allowEac3DirectPlay, value);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether DTS passthrough should be allowed.
+    /// </summary>
+    public bool AllowDtsPassthrough
+    {
+        get => _allowDtsPassthrough;
+        set => SetProperty(ref _allowDtsPassthrough, value);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether Dolby TrueHD passthrough should be allowed.
+    /// </summary>
+    public bool AllowTrueHdPassthrough
+    {
+        get => _allowTrueHdPassthrough;
+        set => SetProperty(ref _allowTrueHdPassthrough, value);
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether codec options for the native video player can be edited.
+    /// </summary>
+    public bool CanConfigureNativeCodecOptions => EnableNativeVideoPlayback;
+
+    /// <summary>
+    /// Gets a value indicating whether passthrough codec options can be edited.
+    /// </summary>
+    public bool CanConfigureNativePassthroughOptions => EnableNativeVideoPlayback && EnableNativeAudioPassthrough;
 
     /// <summary>
     /// Gets or sets the collection of possible HDMI display modes.
@@ -195,6 +289,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private void OnSaveExecute()
     {
         SaveSettings();
+        _messenger.Send(new WebMessage("reloadNativeShell", new JsonObject()));
         NavigateToMainPage();
     }
 
@@ -219,6 +314,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
 
         Central.Settings.ForceEnableTvMode = ForceEnableTvMode;
+        Central.Settings.EnableNativeVideoPlayback = EnableNativeVideoPlayback;
+        Central.Settings.EnableNativeAudioPassthrough = EnableNativeAudioPassthrough;
+        Central.Settings.AllowAc3DirectPlay = AllowAc3DirectPlay;
+        Central.Settings.AllowEac3DirectPlay = AllowEac3DirectPlay;
+        Central.Settings.AllowDtsPassthrough = AllowDtsPassthrough;
+        Central.Settings.AllowTrueHdPassthrough = AllowTrueHdPassthrough;
     }
 
     /// <inheritdoc />

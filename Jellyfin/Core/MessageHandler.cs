@@ -21,6 +21,7 @@ public class MessageHandler : IMessageHandler
     private readonly Frame _frame;
     private readonly IFullScreenManager _fullScreenManager;
     private readonly IMessenger _messenger;
+    private readonly INativeVideoPlayerService _nativeVideoPlayerService;
     private readonly ILogger<WebView2> _webviewLogger;
 
     /// <summary>
@@ -29,12 +30,14 @@ public class MessageHandler : IMessageHandler
     /// <param name="frame">Frame.</param>
     /// <param name="fullScreenManager">The service responsible for managing HDMI and fullscreen states.</param>
     /// <param name="messenger">The Messenger service.</param>
+    /// <param name="nativeVideoPlayerService">The native video playback service.</param>
     /// <param name="webviewLogger">The webview logger.</param>
-    public MessageHandler(Frame frame, IFullScreenManager fullScreenManager, IMessenger messenger, ILogger<WebView2> webviewLogger)
+    public MessageHandler(Frame frame, IFullScreenManager fullScreenManager, IMessenger messenger, INativeVideoPlayerService nativeVideoPlayerService, ILogger<WebView2> webviewLogger)
     {
         _frame = frame;
         _fullScreenManager = fullScreenManager;
         _messenger = messenger;
+        _nativeVideoPlayerService = nativeVideoPlayerService;
         _webviewLogger = webviewLogger;
     }
 
@@ -58,6 +61,42 @@ public class MessageHandler : IMessageHandler
         else if (eventType == "disableFullscreen")
         {
             await _fullScreenManager.DisableFullScreen().ConfigureAwait(true);
+        }
+        else if (eventType == "startNativePlayback")
+        {
+            await _nativeVideoPlayerService.StartAsync(args).ConfigureAwait(true);
+        }
+        else if (eventType == "stopNativePlayback")
+        {
+            await _nativeVideoPlayerService.StopAsync().ConfigureAwait(true);
+        }
+        else if (eventType == "pauseNativePlayback")
+        {
+            await _nativeVideoPlayerService.PauseAsync().ConfigureAwait(true);
+        }
+        else if (eventType == "unpauseNativePlayback")
+        {
+            await _nativeVideoPlayerService.UnpauseAsync().ConfigureAwait(true);
+        }
+        else if (eventType == "seekNativePlayback")
+        {
+            await _nativeVideoPlayerService.SeekAsync(args.GetNamedNumber("positionMilliseconds", 0)).ConfigureAwait(true);
+        }
+        else if (eventType == "setNativePlaybackVolume")
+        {
+            await _nativeVideoPlayerService.SetVolumeAsync(args.GetNamedNumber("volume", 100)).ConfigureAwait(true);
+        }
+        else if (eventType == "setNativePlaybackMute")
+        {
+            await _nativeVideoPlayerService.SetMutedAsync(args.GetNamedBoolean("isMuted", false)).ConfigureAwait(true);
+        }
+        else if (eventType == "setNativePlaybackRate")
+        {
+            await _nativeVideoPlayerService.SetPlaybackRateAsync(args.GetNamedNumber("playbackRate", 1)).ConfigureAwait(true);
+        }
+        else if (eventType == "setNativeSubtitleStream")
+        {
+            await _nativeVideoPlayerService.SetSubtitleStreamIndexAsync((int)args.GetNamedNumber("subtitleStreamIndex", -1)).ConfigureAwait(true);
         }
         else if (eventType == "selectServer")
         {

@@ -1,5 +1,6 @@
 using System;
 using Jellyfin.Core.Contract;
+using Jellyfin.Utils;
 using Windows.Storage;
 
 namespace Jellyfin.Core;
@@ -15,6 +16,12 @@ public class SettingsManager : ISettingsManager
     private string _autoResolution = "AUTO_RESOLUTION";
     private string _autoRefreshRate = "AUTO_REFRESH_RATE";
     private string _forceEnableTvMode = "FORCE_TV_MODE";
+    private string _enableNativeVideoPlayback = "ENABLE_NATIVE_VIDEO_PLAYBACK";
+    private string _enableNativeAudioPassthrough = "ENABLE_NATIVE_AUDIO_PASSTHROUGH";
+    private string _allowAc3DirectPlay = "ALLOW_AC3_DIRECT_PLAY";
+    private string _allowEac3DirectPlay = "ALLOW_EAC3_DIRECT_PLAY";
+    private string _allowDtsPassthrough = "ALLOW_DTS_PASSTHROUGH";
+    private string _allowTrueHdPassthrough = "ALLOW_TRUEHD_PASSTHROUGH";
 
     private ApplicationDataContainer LocalSettings => ApplicationData.Current.LocalSettings;
 
@@ -92,6 +99,61 @@ public class SettingsManager : ISettingsManager
     }
 
     /// <summary>
+    /// Gets or sets a value indicating whether native video playback should be used for Jellyfin video items.
+    /// Defaults to enabled on Xbox so existing installs take the native playback path unless the user opts out.
+    /// </summary>
+    public bool EnableNativeVideoPlayback
+    {
+        get => GetProperty(_enableNativeVideoPlayback, AppUtils.GetDeviceFormFactorType() == DeviceFormFactorType.Xbox);
+        set => SetProperty(_enableNativeVideoPlayback, value);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether passthrough should be used for passthrough-only codecs.
+    /// </summary>
+    public bool EnableNativeAudioPassthrough
+    {
+        get => GetProperty<bool>(_enableNativeAudioPassthrough);
+        set => SetProperty(_enableNativeAudioPassthrough, value);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether AC3 should be direct played through the native player.
+    /// </summary>
+    public bool AllowAc3DirectPlay
+    {
+        get => GetProperty(_allowAc3DirectPlay, true);
+        set => SetProperty(_allowAc3DirectPlay, value);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether E-AC3 should be direct played through the native player.
+    /// </summary>
+    public bool AllowEac3DirectPlay
+    {
+        get => GetProperty(_allowEac3DirectPlay, true);
+        set => SetProperty(_allowEac3DirectPlay, value);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether DTS passthrough is allowed.
+    /// </summary>
+    public bool AllowDtsPassthrough
+    {
+        get => GetProperty<bool>(_allowDtsPassthrough);
+        set => SetProperty(_allowDtsPassthrough, value);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether Dolby TrueHD passthrough is allowed.
+    /// </summary>
+    public bool AllowTrueHdPassthrough
+    {
+        get => GetProperty<bool>(_allowTrueHdPassthrough);
+        set => SetProperty(_allowTrueHdPassthrough, value);
+    }
+
+    /// <summary>
     /// Gets or sets a value indicating whether to force enable TV mode, which may adjust UI elements for better TV compatibility.
     /// </summary>
     public bool ForceEnableTvMode
@@ -114,6 +176,11 @@ public class SettingsManager : ISettingsManager
     /// <returns>The value of the property if found; otherwise, the default value.</returns>
     public T GetProperty<T>(string propertyName, T defaultValue = default)
     {
+        if (!ContainerSettings.Values.ContainsKey(propertyName))
+        {
+            return defaultValue;
+        }
+
         var value = ContainerSettings.Values[propertyName];
 
         if (value != null)

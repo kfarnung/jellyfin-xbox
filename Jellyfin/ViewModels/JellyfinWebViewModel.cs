@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -15,6 +16,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Windows.Data.Json;
 using Windows.Graphics.Display.Core;
+using Windows.System;
 using Windows.System.Profile;
 using Windows.UI.Core;
 using Windows.UI.Popups;
@@ -29,8 +31,10 @@ namespace Jellyfin.ViewModels;
 /// </summary>
 public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRecipient<WebMessage>
 {
+    private const double NativePlaybackSeekStepMilliseconds = 10000;
     private readonly INativeShellScriptLoader _nativeShellScriptLoader;
     private readonly IMessageHandler _messageHandler;
+    private readonly INativeVideoPlayerService _nativeVideoPlayerService;
     private readonly IGamepadManager _gamepadManager;
     private readonly IDisposable _navigationHandler;
     private readonly CoreDispatcher _dispatcher;
@@ -38,8 +42,14 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     private readonly ApplicationView _applicationView;
     private readonly ILogger<JellyfinWebViewModel> _logger;
     private readonly IStringLocalizer<Translations> _stringLocalizer;
+    private readonly object _webMessageQueueLock = new();
+    private readonly Queue<JsonObject> _pendingWebMessages = new();
     private bool _isInProgress;
     private bool _displayDeprecationNotice;
+    private bool _isNativePlayerVisible;
+    private string _nativePlaybackProgressText;
+    private bool _isProcessingWebMessages;
+    private string _nativeShellScriptId;
     private WeakEventListener<JellyfinWebViewModel, object, CultureInfo> _weakPropertyChangedListener;
 
     /// <summary>
@@ -47,6 +57,7 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     /// </summary>
     /// <param name="nativeShellScriptLoader">Service for loading and prepping the window injection script.</param>
     /// <param name="messageHandler">Service for handling messages send by the WinUI.</param>
+    /// <param name="nativeVideoPlayerService">Service for hosting and controlling native video playback.</param>
     /// <param name="gamepadManager">Service for handling gamepad input.</param>
     /// <param name="dispatcher">UI dispatcher.</param>
     /// <param name="frame">Current frame of the top application.</param>
@@ -57,6 +68,7 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     public JellyfinWebViewModel(
         INativeShellScriptLoader nativeShellScriptLoader,
         IMessageHandler messageHandler,
+        INativeVideoPlayerService nativeVideoPlayerService,
         IGamepadManager gamepadManager,
         CoreDispatcher dispatcher,
         Frame frame,
@@ -67,6 +79,7 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     {
         _nativeShellScriptLoader = nativeShellScriptLoader;
         _messageHandler = messageHandler;
+        _nativeVideoPlayerService = nativeVideoPlayerService;
         _gamepadManager = gamepadManager;
         _dispatcher = dispatcher;
         _frame = frame;
@@ -75,6 +88,16 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         _stringLocalizer = stringLocalizer;
         _logger.LogInformation("JellyfinWebViewModel Initialising.");
         _navigationHandler = _gamepadManager.ObserveBackEvent(WebView_BackRequested, 0);
+        NativePlayer = new MediaPlayerElement
+        {
+            Stretch = Windows.UI.Xaml.Media.Stretch.Uniform,
+            IsTabStop = false,
+            IsHitTestVisible = false
+        };
+        _nativeVideoPlayerService.Attach(NativePlayer);
+        _nativeVideoPlayerService.StateChanged += OnNativeVideoPlayerStateChanged;
+        _nativeVideoPlayerService.HostMessageGenerated += OnNativePlaybackHostMessageGenerated;
+        IsNativePlayerVisible = _nativeVideoPlayerService.IsVisible;
 
         Central.Settings.JellyfinServerAccessToken = null;
         IsInProgress = true;
@@ -119,11 +142,38 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the native player surface is currently visible.
+    /// </summary>
+    public bool IsNativePlayerVisible
+    {
+        get => _isNativePlayerVisible;
+        set => SetProperty(ref _isNativePlayerVisible, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the native playback progress text shown in the overlay.
+    /// </summary>
+    public string NativePlaybackProgressText
+    {
+        get => _nativePlaybackProgressText;
+        set => SetProperty(ref _nativePlaybackProgressText, value);
+    }
+
+    /// <summary>
     /// Gets or sets the <see cref="WebView2"/> instance used to render web content.
     /// </summary>
     /// <remarks>Ensure that the <see cref="WebView2"/> instance is properly initialized before use.  Setting
     /// this property will update the internal reference to the web view.</remarks>
     public WebView2 WebView
+    {
+        get => field;
+        set => SetProperty(ref field, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the native player element hosted above the WebView.
+    /// </summary>
+    public MediaPlayerElement NativePlayer
     {
         get => field;
         set => SetProperty(ref field, value);
@@ -182,6 +232,7 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
             WebView.CoreWebView2.ContainsFullScreenElementChanged -= JellyfinWebView_ContainsFullScreenElementChanged;
             WebView.Close();
             WebView = null;
+            _nativeShellScriptId = null;
         }
 
         var hdmiInfo = HdmiDisplayInformation.GetForCurrentView();
@@ -195,7 +246,12 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     {
         try
         {
-            if (WebView.CanGoBack && !e.Handled)
+            if (_nativeVideoPlayerService.IsPlaybackActive && !e.Handled)
+            {
+                e.Handled = true;
+                _ = _nativeVideoPlayerService.StopAsync();
+            }
+            else if (WebView.CanGoBack && !e.Handled)
             {
                 e.Handled = true;
                 WebView.GoBack(); // Navigate back in the WebView2 control.
@@ -205,6 +261,51 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         {
             _logger.LogError(exception, "Failed to navigate back.");
         }
+    }
+
+    /// <summary>
+    /// Attempts to handle a controller or keyboard input for native playback.
+    /// </summary>
+    /// <param name="virtualKey">The virtual key to process.</param>
+    /// <returns><see langword="true"/> when the input was handled for native playback; otherwise <see langword="false"/>.</returns>
+    public bool TryHandleNativePlaybackInput(VirtualKey virtualKey)
+    {
+        if (!_nativeVideoPlayerService.IsPlaybackActive)
+        {
+            return false;
+        }
+
+        Task command = null;
+        switch (virtualKey)
+        {
+            case VirtualKey.GamepadA:
+            case VirtualKey.Space:
+                command = _nativeVideoPlayerService.TogglePauseAsync();
+                break;
+            case VirtualKey.GamepadDPadLeft:
+            case VirtualKey.GamepadLeftShoulder:
+            case VirtualKey.GamepadLeftThumbstickLeft:
+            case VirtualKey.Left:
+                command = _nativeVideoPlayerService.SeekRelativeAsync(-NativePlaybackSeekStepMilliseconds);
+                break;
+            case VirtualKey.GamepadDPadRight:
+            case VirtualKey.GamepadRightShoulder:
+            case VirtualKey.GamepadLeftThumbstickRight:
+            case VirtualKey.Right:
+                command = _nativeVideoPlayerService.SeekRelativeAsync(NativePlaybackSeekStepMilliseconds);
+                break;
+        }
+
+        if (command == null)
+        {
+            return false;
+        }
+
+        _ = command.ContinueWith(
+            task => _logger.LogError(task.Exception, "Failed to apply native playback controller input."),
+            TaskContinuationOptions.OnlyOnFaulted);
+
+        return true;
     }
 
     private async Task InitializeWebViewAndNavigateTo(Uri uri)
@@ -258,7 +359,13 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         var nativeShellScript = await _nativeShellScriptLoader.LoadNativeShellScript().ConfigureAwait(true);
         try
         {
-            await WebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(nativeShellScript);
+            if (!string.IsNullOrWhiteSpace(_nativeShellScriptId))
+            {
+                WebView.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(_nativeShellScriptId);
+                _nativeShellScriptId = null;
+            }
+
+            _nativeShellScriptId = await WebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(nativeShellScript);
             _logger.LogInformation("Native shell script injected");
         }
         catch (Exception ex)
@@ -274,17 +381,21 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
             var jsonMessage = args.TryGetWebMessageAsString();
             if (JsonObject.TryParse(jsonMessage, out var argsJson))
             {
-                _ = Task.Run(async () =>
+                var shouldProcessQueue = false;
+                lock (_webMessageQueueLock)
                 {
-                    try
+                    _pendingWebMessages.Enqueue(argsJson);
+                    if (!_isProcessingWebMessages)
                     {
-                        await _messageHandler.HandleJsonNotification(argsJson).ConfigureAwait(true);
+                        _isProcessingWebMessages = true;
+                        shouldProcessQueue = true;
                     }
-                    catch (Exception e)
-                    {
-                        _logger.LogError(e, "Failed to handle json message.");
-                    }
-                });
+                }
+
+                if (shouldProcessQueue)
+                {
+                    _ = ProcessWebMessageQueueAsync();
+                }
             }
             else
             {
@@ -294,6 +405,33 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         catch (Exception e)
         {
             _logger.LogError(e, "Failed to handle json message.");
+        }
+    }
+
+    private async Task ProcessWebMessageQueueAsync()
+    {
+        while (true)
+        {
+            JsonObject nextMessage;
+            lock (_webMessageQueueLock)
+            {
+                if (_pendingWebMessages.Count == 0)
+                {
+                    _isProcessingWebMessages = false;
+                    return;
+                }
+
+                nextMessage = _pendingWebMessages.Dequeue();
+            }
+
+            try
+            {
+                await _messageHandler.HandleJsonNotification(nextMessage).ConfigureAwait(true);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Failed to handle json message.");
+            }
         }
     }
 
@@ -327,20 +465,8 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
                         _ = instance._dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
                         {
                             var oldUrl = instance.WebView.Source;
-
-                            instance.UninitializeWebView();
                             instance._weakPropertyChangedListener.Detach();
-                            instance.IsInProgress = true;
-                            _ = instance._dispatcher.RunAsync(CoreDispatcherPriority.Low, async () =>
-                            {
-                                GC.Collect();
-                                GC.WaitForPendingFinalizers();
-                                GC.Collect();
-
-                                // https://github.com/microsoft/microsoft-ui-xaml/issues/4752#issuecomment-819687363
-                                await Task.Delay(1000).ConfigureAwait(true); // somewhere is a race condition that causes the webview not to initialise properly without a delay when clearing the old instance from the tree.
-                                await instance.InitialiseWebView(oldUrl).ConfigureAwait(true);
-                            });
+                            _ = instance.RecreateWebViewAsync(oldUrl);
                         });
                     },
                     OnDetachAction = (weakEventListener) => CultureSelectorViewModel.CultureChanged -= weakEventListener.OnEvent // Use Local References Only
@@ -441,11 +567,111 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         });
     }
 
+    private async Task RecreateWebViewAsync(Uri targetUrl)
+    {
+        await _nativeVideoPlayerService.StopAsync().ConfigureAwait(true);
+        UninitializeWebView();
+        IsInProgress = true;
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        // https://github.com/microsoft/microsoft-ui-xaml/issues/4752#issuecomment-819687363
+        await Task.Delay(1000).ConfigureAwait(true); // somewhere is a race condition that causes the webview not to initialise properly without a delay when clearing the old instance from the tree.
+        await InitialiseWebView(targetUrl).ConfigureAwait(true);
+    }
+
+    private void OnNativePlaybackHostMessageGenerated(object sender, NativePlaybackHostMessageEventArgs e)
+    {
+        _ = _dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+        {
+            UpdateNativePlaybackOverlay(e.Type, e.Args);
+
+            if (WebView?.CoreWebView2 == null)
+            {
+                return;
+            }
+
+            var payload = new JsonObject
+            {
+                ["type"] = JsonValue.CreateStringValue(e.Type),
+                ["args"] = e.Args
+            };
+
+            WebView.CoreWebView2.PostWebMessageAsJson(payload.Stringify());
+        });
+    }
+
+    private void OnNativeVideoPlayerStateChanged(object sender, EventArgs e)
+    {
+        _ = _dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+        {
+            IsNativePlayerVisible = _nativeVideoPlayerService.IsVisible;
+            if (!IsNativePlayerVisible)
+            {
+                NativePlaybackProgressText = string.Empty;
+            }
+
+            if (!IsNativePlayerVisible)
+            {
+                WebView?.Focus(FocusState.Programmatic);
+            }
+        });
+    }
+
+    private void UpdateNativePlaybackOverlay(string messageType, JsonObject args)
+    {
+        switch (messageType)
+        {
+            case "nativePlaybackAccepted":
+            case "nativePlaybackStarted":
+            case "nativePlaybackTimeUpdate":
+            case "nativePlaybackPause":
+            case "nativePlaybackUnpause":
+                NativePlaybackProgressText = BuildNativePlaybackProgressText(args);
+                break;
+            case "nativePlaybackCancelled":
+            case "nativePlaybackStopped":
+            case "nativePlaybackError":
+                NativePlaybackProgressText = string.Empty;
+                break;
+        }
+    }
+
+    private static string BuildNativePlaybackProgressText(JsonObject args)
+    {
+        if (args == null)
+        {
+            return string.Empty;
+        }
+
+        var currentTimeMilliseconds = args.GetNamedNumber("currentTime", 0);
+        var durationMilliseconds = args.GetNamedNumber("duration", 0);
+        if (currentTimeMilliseconds <= 0 && durationMilliseconds <= 0)
+        {
+            return string.Empty;
+        }
+
+        var currentTime = FormatNativePlaybackTime(currentTimeMilliseconds);
+        var duration = durationMilliseconds > 0 ? FormatNativePlaybackTime(durationMilliseconds) : "--:--";
+        return currentTime + " / " + duration;
+    }
+
+    private static string FormatNativePlaybackTime(double milliseconds)
+    {
+        var timeSpan = TimeSpan.FromMilliseconds(Math.Max(0, milliseconds));
+        return timeSpan.TotalHours >= 1 ? timeSpan.ToString(@"h\:mm\:ss") : timeSpan.ToString(@"m\:ss");
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
         _navigationHandler.Dispose();
-        _weakPropertyChangedListener.Detach();
+        _weakPropertyChangedListener?.Detach();
+        _nativeVideoPlayerService.StateChanged -= OnNativeVideoPlayerStateChanged;
+        _nativeVideoPlayerService.HostMessageGenerated -= OnNativePlaybackHostMessageGenerated;
+        _ = _nativeVideoPlayerService.StopAsync();
         UninitializeWebView();
     }
 
@@ -458,6 +684,13 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
                 _ = _dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
                 {
                     IsInProgress = false;
+                });
+                break;
+            case "reloadNativeShell":
+                _ = _dispatcher.RunAsync(CoreDispatcherPriority.Normal, async () =>
+                {
+                    var targetUrl = WebView?.Source ?? new Uri(Central.Settings.JellyfinServer);
+                    await RecreateWebViewAsync(targetUrl).ConfigureAwait(true);
                 });
                 break;
         }

@@ -92,6 +92,7 @@ public sealed partial class App : Application
 
         // Services
         services.AddSingleton<IFullScreenManager, FullScreenManager>();
+        services.AddSingleton<INativeVideoPlayerService, NativeVideoPlayerService>();
         services.AddSingleton<IMessageHandler, MessageHandler>();
         services.AddSingleton<INativeShellScriptLoader, NativeShellScriptLoader>();
         services.AddSingleton<ISettingsManager, SettingsManager>();

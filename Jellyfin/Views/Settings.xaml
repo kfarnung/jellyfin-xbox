@@ -131,9 +131,10 @@
                         <RowDefinition MinHeight="35"/>
                         <RowDefinition />
                         <RowDefinition MinHeight="35"/>
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
                         <RowDefinition MinHeight="55"/>
-                        <RowDefinition />
-                        <RowDefinition />
                     </Grid.RowDefinitions>
 
                     <CheckBox                        
@@ -169,9 +170,56 @@
                         Content="{localize:Localize Key=Settings.Values.ForceEnableTV.Text}"
                         Foreground="White" FontSize="{StaticResource FontL}"
                         Grid.Row="4" />
-                    
+
+                    <CheckBox
+                        IsChecked="{Binding EnableNativeVideoPlayback, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                        Content="{localize:Localize Key=Settings.Values.NativeVideoPlayback.Text}"
+                        Foreground="White"
+                        FontSize="{StaticResource FontL}"
+                        Grid.Row="5" />
+
+                    <StackPanel Grid.Row="6"
+                                Margin="0,4,0,0"
+                                HorizontalAlignment="Stretch">
+                        <CheckBox
+                            Margin="30,0,0,0"
+                            IsChecked="{Binding EnableNativeAudioPassthrough, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                            IsEnabled="{Binding CanConfigureNativeCodecOptions}"
+                            Content="{localize:Localize Key=Settings.Values.NativeAudioPassthrough.Text}"
+                            Foreground="White"
+                            FontSize="{StaticResource FontL}" />
+                        <CheckBox
+                            Margin="60,6,0,0"
+                            IsChecked="{Binding AllowAc3DirectPlay, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                            IsEnabled="{Binding CanConfigureNativeCodecOptions}"
+                            Content="{localize:Localize Key=Settings.Values.AllowAc3.Text}"
+                            Foreground="White"
+                            FontSize="{StaticResource FontL}" />
+                        <CheckBox
+                            Margin="60,6,0,0"
+                            IsChecked="{Binding AllowEac3DirectPlay, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                            IsEnabled="{Binding CanConfigureNativeCodecOptions}"
+                            Content="{localize:Localize Key=Settings.Values.AllowEac3.Text}"
+                            Foreground="White"
+                            FontSize="{StaticResource FontL}" />
+                        <CheckBox
+                            Margin="60,6,0,0"
+                            IsChecked="{Binding AllowDtsPassthrough, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                            IsEnabled="{Binding CanConfigureNativePassthroughOptions}"
+                            Content="{localize:Localize Key=Settings.Values.AllowDts.Text}"
+                            Foreground="White"
+                            FontSize="{StaticResource FontL}" />
+                        <CheckBox
+                            Margin="60,6,0,0"
+                            IsChecked="{Binding AllowTrueHdPassthrough, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                            IsEnabled="{Binding CanConfigureNativePassthroughOptions}"
+                            Content="{localize:Localize Key=Settings.Values.AllowTrueHd.Text}"
+                            Foreground="White"
+                            FontSize="{StaticResource FontL}" />
+                    </StackPanel>
+
                     <Grid   Grid.Column="0"
-                            Grid.Row="5"                            
+                            Grid.Row="7"                            
                             Margin="0,5,0,0"
                             HorizontalAlignment="Stretch">
                         <local:CultureSelector 
