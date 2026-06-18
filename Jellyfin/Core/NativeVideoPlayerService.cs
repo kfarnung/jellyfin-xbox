@@ -5,6 +5,7 @@ using Jellyfin.Core.Contract;
 using Microsoft.Extensions.Logging;
 using Windows.Data.Json;
 using Windows.Foundation.Collections;
+using Windows.Media;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.UI.Core;
@@ -389,6 +390,7 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
             _mediaPlayer.MediaEnded -= OnMediaEnded;
             _mediaPlayer.MediaFailed -= OnMediaFailed;
             _mediaPlayer.PlaybackSession.PlaybackStateChanged -= OnPlaybackStateChanged;
+            _mediaPlayer.SystemMediaTransportControls.ButtonPressed -= OnSmtcButtonPressed;
             _mediaPlayer.Dispose();
         }
     }
@@ -446,6 +448,7 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
         {
             IsVisible = false;
             IsPlaybackActive = false;
+            _mediaPlayer.SystemMediaTransportControls.PlaybackStatus = MediaPlaybackStatus.Stopped;
             if (_hasFullscreenSession)
             {
                 await _fullScreenManager.DisableFullScreen().ConfigureAwait(true);
@@ -493,6 +496,13 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
             _mediaPlayer.MediaEnded += OnMediaEnded;
             _mediaPlayer.MediaFailed += OnMediaFailed;
             _mediaPlayer.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
+            _mediaPlayer.CommandManager.IsEnabled = false;
+            var smtc = _mediaPlayer.SystemMediaTransportControls;
+            smtc.IsEnabled = true;
+            smtc.IsPlayEnabled = true;
+            smtc.IsPauseEnabled = true;
+            smtc.IsStopEnabled = true;
+            smtc.ButtonPressed += OnSmtcButtonPressed;
         }
 
         if (_playerElement.MediaPlayer != _mediaPlayer)
@@ -514,6 +524,7 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
             _mediaPlayer.MediaEnded -= OnMediaEnded;
             _mediaPlayer.MediaFailed -= OnMediaFailed;
             _mediaPlayer.PlaybackSession.PlaybackStateChanged -= OnPlaybackStateChanged;
+            _mediaPlayer.SystemMediaTransportControls.ButtonPressed -= OnSmtcButtonPressed;
             _mediaPlayer.Dispose();
             _mediaPlayer = null;
         }
@@ -649,6 +660,28 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
         }
 
         _lastPlaybackState = state;
+        _mediaPlayer.SystemMediaTransportControls.PlaybackStatus = state switch
+        {
+            MediaPlaybackState.Playing => MediaPlaybackStatus.Playing,
+            MediaPlaybackState.Paused => MediaPlaybackStatus.Paused,
+            _ => _mediaPlayer.SystemMediaTransportControls.PlaybackStatus
+        };
+    }
+
+    private void OnSmtcButtonPressed(SystemMediaTransportControls sender, SystemMediaTransportControlsButtonPressedEventArgs args)
+    {
+        switch (args.Button)
+        {
+            case SystemMediaTransportControlsButton.Play:
+                _ = UnpauseAsync();
+                break;
+            case SystemMediaTransportControlsButton.Pause:
+                _ = PauseAsync();
+                break;
+            case SystemMediaTransportControlsButton.Stop:
+                _ = StopAsync();
+                break;
+        }
     }
 
     private void OnAudioTracksChanged(MediaPlaybackItem sender, IVectorChangedEventArgs args)

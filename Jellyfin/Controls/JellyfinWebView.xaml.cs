@@ -4,6 +4,7 @@ using Jellyfin.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
+using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Input;
 
 namespace Jellyfin.Controls;
@@ -87,13 +88,30 @@ public sealed partial class JellyfinWebView
 
             if (jellyfinWebViewModel.IsNativePlaybackOverlayVisible && NativePlaybackPlayPauseButton.IsEnabled)
             {
-                NativePlaybackPlayPauseButton.Focus(FocusState.Programmatic);
+                FocusOrDeferAfterLayout(NativePlaybackPlayPauseButton);
             }
             else
             {
                 NativePlaybackFocusProxy.Focus(FocusState.Programmatic);
             }
         });
+    }
+
+    // When the overlay transitions from Collapsed to Visible, buttons haven't gone through a
+    // layout pass yet and Focus() silently returns false. Subscribe to LayoutUpdated to retry
+    // once layout has completed.
+    private static void FocusOrDeferAfterLayout(Control control)
+    {
+        if (!control.Focus(FocusState.Programmatic))
+        {
+            void OnLayoutUpdated(object s, object args)
+            {
+                control.LayoutUpdated -= OnLayoutUpdated;
+                control.Focus(FocusState.Programmatic);
+            }
+
+            control.LayoutUpdated += OnLayoutUpdated;
+        }
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)

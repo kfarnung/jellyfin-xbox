@@ -91,7 +91,8 @@
                             Visibility="{Binding IsNativePlaybackOverlayVisible, Converter={StaticResource BooleanVisibilityConverter}}">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal"
-                                            HorizontalAlignment="Center">
+                                            HorizontalAlignment="Center"
+                                            XYFocusKeyboardNavigation="Enabled">
                                     <Button
                                         x:Name="NativePlaybackRewindButton"
                                         Width="64"

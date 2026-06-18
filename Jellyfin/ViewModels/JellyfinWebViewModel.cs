@@ -32,6 +32,11 @@ namespace Jellyfin.ViewModels;
 public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRecipient<WebMessage>
 {
     private const double NativePlaybackSeekStepMilliseconds = 10000;
+
+    // Media key virtual key codes not present as named VirtualKey enum members.
+    private const VirtualKey MediaPlayPauseKey = (VirtualKey)0xB3;
+    private const VirtualKey MediaStopKey = (VirtualKey)0xB2;
+
     private static readonly TimeSpan NativePlaybackOverlayHideDelay = TimeSpan.FromSeconds(8);
     private readonly INativeShellScriptLoader _nativeShellScriptLoader;
     private readonly IMessageHandler _messageHandler;
@@ -346,6 +351,7 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         {
             case VirtualKey.GamepadA:
             case VirtualKey.Space:
+            case VirtualKey.Enter:
                 if (!IsNativePlaybackOverlayVisible)
                 {
                     ShowNativePlaybackOverlay();
@@ -353,6 +359,17 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
                 }
 
                 return false;
+            case VirtualKey.Escape:
+                if (IsNativePlaybackOverlayVisible)
+                {
+                    HideNativePlaybackOverlay();
+                }
+                else
+                {
+                    _ = _nativeVideoPlayerService.StopAsync();
+                }
+
+                return true;
             case VirtualKey.GamepadDPadLeft:
             case VirtualKey.GamepadLeftShoulder:
             case VirtualKey.GamepadLeftThumbstickLeft:
@@ -382,6 +399,12 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
             case VirtualKey.Up:
             case VirtualKey.Down:
                 ShowNativePlaybackOverlay();
+                return true;
+            case MediaPlayPauseKey:
+                RequestNativePlaybackPlayPause();
+                return true;
+            case MediaStopKey:
+                _ = _nativeVideoPlayerService.StopAsync();
                 return true;
         }
 
