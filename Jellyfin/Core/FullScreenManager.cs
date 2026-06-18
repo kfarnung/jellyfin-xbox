@@ -9,6 +9,7 @@ using Jellyfin.Utils;
 using Windows.Data.Json;
 using Windows.Graphics.Display.Core;
 using Windows.System.Display;
+using Windows.UI.Core;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml.Controls;
 
@@ -181,37 +182,44 @@ public sealed class FullScreenManager : IFullScreenManager
     {
         if (AppUtils.IsXbox)
         {
-            if (args != null)
+            await RunOnUiThreadAsync(async () =>
             {
-                try
+                if (args != null)
                 {
-                    var videoWidth = GetNamedUInt32(args, "videoWidth");
-                    var videoHeight = GetNamedUInt32(args, "videoHeight");
-                    var videoFrameRate = GetNamedDouble(args, "videoFrameRate");
-                    var videoRangeType = GetNamedString(args, "videoRangeType");
-
-                    var hdmiDisplayInformation = HdmiDisplayInformation.GetForCurrentView();
-                    var hdmiDisplayHdrOption = GetHdmiDisplayHdrOption(hdmiDisplayInformation, videoRangeType);
-                    await SwitchToBestDisplayMode(videoWidth, videoHeight, videoFrameRate, hdmiDisplayHdrOption).ConfigureAwait(false);
-                    if (!_displayRequestActive)
+                    try
                     {
-                        _displayRequest.RequestActive();
-                        _displayRequestActive = true;
+                        var videoWidth = GetNamedUInt32(args, "videoWidth");
+                        var videoHeight = GetNamedUInt32(args, "videoHeight");
+                        var videoFrameRate = GetNamedDouble(args, "videoFrameRate");
+                        var videoRangeType = GetNamedString(args, "videoRangeType");
+
+                        var hdmiDisplayInformation = HdmiDisplayInformation.GetForCurrentView();
+                        var hdmiDisplayHdrOption = GetHdmiDisplayHdrOption(hdmiDisplayInformation, videoRangeType);
+                        await SwitchToBestDisplayMode(videoWidth, videoHeight, videoFrameRate, hdmiDisplayHdrOption).ConfigureAwait(true);
+                        if (!_displayRequestActive)
+                        {
+                            _displayRequest.RequestActive();
+                            _displayRequestActive = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error during SwitchToBestDisplayMode: {ex}");
                     }
                 }
-                catch (Exception ex)
+                else
                 {
-                    Debug.WriteLine($"Error during SwitchToBestDisplayMode: {ex}");
+                    Debug.WriteLine("enableFullscreenAsync called with no args");
                 }
-            }
-            else
-            {
-                Debug.WriteLine("enableFullscreenAsync called with no args");
-            }
+            }).ConfigureAwait(true);
         }
         else
         {
-            _applicationView.TryEnterFullScreenMode();
+            await RunOnUiThreadAsync(() =>
+            {
+                _applicationView.TryEnterFullScreenMode();
+                return Task.CompletedTask;
+            }).ConfigureAwait(true);
         }
     }
 
@@ -221,20 +229,47 @@ public sealed class FullScreenManager : IFullScreenManager
     /// <returns>A task that completes when the fullscreen has been closed.</returns>
     public async Task DisableFullScreen()
     {
-        if (AppUtils.IsXbox)
+        await RunOnUiThreadAsync(async () =>
         {
-            await SetDefaultDisplayModeAsync().ConfigureAwait(true);
-        }
-        else
+            if (AppUtils.IsXbox)
+            {
+                await SetDefaultDisplayModeAsync().ConfigureAwait(true);
+            }
+            else
+            {
+                _applicationView.ExitFullScreenMode();
+            }
+
+            if (_displayRequestActive)
+            {
+                _displayRequest.RequestRelease();
+                _displayRequestActive = false;
+            }
+        }).ConfigureAwait(true);
+    }
+
+    private Task RunOnUiThreadAsync(Func<Task> action)
+    {
+        if (_frame?.Dispatcher == null || _frame.Dispatcher.HasThreadAccess)
         {
-            _applicationView.ExitFullScreenMode();
+            return action();
         }
 
-        if (_displayRequestActive)
+        var completionSource = new TaskCompletionSource<bool>();
+        _ = _frame.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, async () =>
         {
-            _displayRequest.RequestRelease();
-            _displayRequestActive = false;
-        }
+            try
+            {
+                await action().ConfigureAwait(true);
+                completionSource.SetResult(true);
+            }
+            catch (Exception ex)
+            {
+                completionSource.SetException(ex);
+            }
+        });
+
+        return completionSource.Task;
     }
 
     private static double GetNamedDouble(JsonObject jsonObject, string key, double defaultValue = 0)

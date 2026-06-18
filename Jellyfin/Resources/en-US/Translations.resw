@@ -275,7 +275,19 @@ You might encounter bugs when running on a PC.</value>
   <data name="Settings.Values.AllowTrueHd.Text" xml:space="preserve">
     <value>Allow Dolby TrueHD passthrough</value>
   </data>
+  <data name="NativePlayback.Overlay.Play.Text" xml:space="preserve">
+    <value>Play</value>
+  </data>
+  <data name="NativePlayback.Overlay.Pause.Text" xml:space="preserve">
+    <value>Pause</value>
+  </data>
+  <data name="NativePlayback.Overlay.Rewind.Text" xml:space="preserve">
+    <value>Rewind 10s</value>
+  </data>
+  <data name="NativePlayback.Overlay.Forward.Text" xml:space="preserve">
+    <value>Forward 10s</value>
+  </data>
   <data name="NativePlayback.Overlay.Shortcuts.Text" xml:space="preserve">
-    <value>A Play/Pause  Left/Right +/-10s  B Back</value>
+    <value>A Show controls  D-pad navigate  B Hide/Back</value>
   </data>
 </root>

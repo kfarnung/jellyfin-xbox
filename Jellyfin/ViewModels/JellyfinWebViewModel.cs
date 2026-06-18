@@ -32,12 +32,14 @@ namespace Jellyfin.ViewModels;
 public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRecipient<WebMessage>
 {
     private const double NativePlaybackSeekStepMilliseconds = 10000;
+    private static readonly TimeSpan NativePlaybackOverlayHideDelay = TimeSpan.FromSeconds(8);
     private readonly INativeShellScriptLoader _nativeShellScriptLoader;
     private readonly IMessageHandler _messageHandler;
     private readonly INativeVideoPlayerService _nativeVideoPlayerService;
     private readonly IGamepadManager _gamepadManager;
     private readonly IDisposable _navigationHandler;
     private readonly CoreDispatcher _dispatcher;
+    private readonly DispatcherTimer _nativePlaybackOverlayTimer;
     private readonly Frame _frame;
     private readonly ApplicationView _applicationView;
     private readonly ILogger<JellyfinWebViewModel> _logger;
@@ -47,7 +49,13 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     private bool _isInProgress;
     private bool _displayDeprecationNotice;
     private bool _isNativePlayerVisible;
+    private bool _isNativePlaybackOverlayVisible;
+    private bool _isNativePlaybackPaused;
     private string _nativePlaybackProgressText;
+    private Symbol _nativePlaybackPrimaryActionSymbol;
+    private string _nativePlaybackPrimaryActionText;
+    private double _nativePlaybackProgressValue;
+    private double _nativePlaybackProgressMaximum = 1;
     private bool _isProcessingWebMessages;
     private string _nativeShellScriptId;
     private WeakEventListener<JellyfinWebViewModel, object, CultureInfo> _weakPropertyChangedListener;
@@ -86,6 +94,11 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         _applicationView = applicationView;
         _logger = logger;
         _stringLocalizer = stringLocalizer;
+        _nativePlaybackOverlayTimer = new DispatcherTimer
+        {
+            Interval = NativePlaybackOverlayHideDelay
+        };
+        _nativePlaybackOverlayTimer.Tick += OnNativePlaybackOverlayTimerTick;
         _logger.LogInformation("JellyfinWebViewModel Initialising.");
         _navigationHandler = _gamepadManager.ObserveBackEvent(WebView_BackRequested, 0);
         NativePlayer = new MediaPlayerElement
@@ -98,6 +111,8 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         _nativeVideoPlayerService.StateChanged += OnNativeVideoPlayerStateChanged;
         _nativeVideoPlayerService.HostMessageGenerated += OnNativePlaybackHostMessageGenerated;
         IsNativePlayerVisible = _nativeVideoPlayerService.IsVisible;
+        NativePlaybackPrimaryActionSymbol = Symbol.Play;
+        NativePlaybackPrimaryActionText = _stringLocalizer.GetString("NativePlayback.Overlay.Play.Text");
 
         Central.Settings.JellyfinServerAccessToken = null;
         IsInProgress = true;
@@ -151,12 +166,57 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the native playback transport overlay is visible.
+    /// </summary>
+    public bool IsNativePlaybackOverlayVisible
+    {
+        get => _isNativePlaybackOverlayVisible;
+        set => SetProperty(ref _isNativePlaybackOverlayVisible, value);
+    }
+
+    /// <summary>
     /// Gets or sets the native playback progress text shown in the overlay.
     /// </summary>
     public string NativePlaybackProgressText
     {
         get => _nativePlaybackProgressText;
         set => SetProperty(ref _nativePlaybackProgressText, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the primary play/pause symbol shown in the native playback overlay.
+    /// </summary>
+    public Symbol NativePlaybackPrimaryActionSymbol
+    {
+        get => _nativePlaybackPrimaryActionSymbol;
+        set => SetProperty(ref _nativePlaybackPrimaryActionSymbol, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the primary play/pause label shown in the native playback overlay.
+    /// </summary>
+    public string NativePlaybackPrimaryActionText
+    {
+        get => _nativePlaybackPrimaryActionText;
+        set => SetProperty(ref _nativePlaybackPrimaryActionText, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the current native playback progress value in milliseconds.
+    /// </summary>
+    public double NativePlaybackProgressValue
+    {
+        get => _nativePlaybackProgressValue;
+        set => SetProperty(ref _nativePlaybackProgressValue, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the current native playback duration value in milliseconds.
+    /// </summary>
+    public double NativePlaybackProgressMaximum
+    {
+        get => _nativePlaybackProgressMaximum;
+        set => SetProperty(ref _nativePlaybackProgressMaximum, value);
     }
 
     /// <summary>
@@ -249,7 +309,14 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
             if (_nativeVideoPlayerService.IsPlaybackActive && !e.Handled)
             {
                 e.Handled = true;
-                _ = _nativeVideoPlayerService.StopAsync();
+                if (IsNativePlaybackOverlayVisible)
+                {
+                    HideNativePlaybackOverlay();
+                }
+                else
+                {
+                    _ = _nativeVideoPlayerService.StopAsync();
+                }
             }
             else if (WebView.CanGoBack && !e.Handled)
             {
@@ -275,37 +342,67 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
             return false;
         }
 
-        Task command = null;
         switch (virtualKey)
         {
             case VirtualKey.GamepadA:
             case VirtualKey.Space:
-                command = _nativeVideoPlayerService.TogglePauseAsync();
-                break;
+                if (!IsNativePlaybackOverlayVisible)
+                {
+                    ShowNativePlaybackOverlay();
+                    return true;
+                }
+
+                return false;
             case VirtualKey.GamepadDPadLeft:
             case VirtualKey.GamepadLeftShoulder:
             case VirtualKey.GamepadLeftThumbstickLeft:
             case VirtualKey.Left:
-                command = _nativeVideoPlayerService.SeekRelativeAsync(-NativePlaybackSeekStepMilliseconds);
-                break;
+                if (IsNativePlaybackOverlayVisible)
+                {
+                    return false;
+                }
+
+                RequestNativePlaybackSeek(-NativePlaybackSeekStepMilliseconds);
+                return true;
             case VirtualKey.GamepadDPadRight:
             case VirtualKey.GamepadRightShoulder:
             case VirtualKey.GamepadLeftThumbstickRight:
             case VirtualKey.Right:
-                command = _nativeVideoPlayerService.SeekRelativeAsync(NativePlaybackSeekStepMilliseconds);
-                break;
+                if (IsNativePlaybackOverlayVisible)
+                {
+                    return false;
+                }
+
+                RequestNativePlaybackSeek(NativePlaybackSeekStepMilliseconds);
+                return true;
+            case VirtualKey.GamepadDPadUp:
+            case VirtualKey.GamepadDPadDown:
+            case VirtualKey.GamepadLeftThumbstickUp:
+            case VirtualKey.GamepadLeftThumbstickDown:
+            case VirtualKey.Up:
+            case VirtualKey.Down:
+                ShowNativePlaybackOverlay();
+                return true;
         }
 
-        if (command == null)
-        {
-            return false;
-        }
+        return false;
+    }
 
-        _ = command.ContinueWith(
-            task => _logger.LogError(task.Exception, "Failed to apply native playback controller input."),
-            TaskContinuationOptions.OnlyOnFaulted);
+    internal void RequestNativePlaybackPlayPause()
+    {
+        ShowNativePlaybackOverlay();
+        ExecuteNativePlaybackCommand(_nativeVideoPlayerService.TogglePauseAsync());
+    }
 
-        return true;
+    internal void RequestNativePlaybackOverlay()
+    {
+        ShowNativePlaybackOverlay();
+    }
+
+    internal void RequestNativePlaybackSeek(double offsetMilliseconds)
+    {
+        ShowNativePlaybackOverlay();
+        ExecuteNativePlaybackCommand(_nativeVideoPlayerService.SeekRelativeAsync(offsetMilliseconds));
     }
 
     private async Task InitializeWebViewAndNavigateTo(Uri uri)
@@ -607,14 +704,16 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     {
         _ = _dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
         {
+            var wasNativePlayerVisible = IsNativePlayerVisible;
             IsNativePlayerVisible = _nativeVideoPlayerService.IsVisible;
-            if (!IsNativePlayerVisible)
+            if (IsNativePlayerVisible && !wasNativePlayerVisible)
             {
-                NativePlaybackProgressText = string.Empty;
+                ShowNativePlaybackOverlay();
             }
 
             if (!IsNativePlayerVisible)
             {
+                ResetNativePlaybackOverlayState();
                 WebView?.Focus(FocusState.Programmatic);
             }
         });
@@ -629,14 +728,44 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
             case "nativePlaybackTimeUpdate":
             case "nativePlaybackPause":
             case "nativePlaybackUnpause":
-                NativePlaybackProgressText = BuildNativePlaybackProgressText(args);
+                UpdateNativePlaybackOverlayState(args);
+                if (messageType == "nativePlaybackPause")
+                {
+                    ShowNativePlaybackOverlay();
+                }
+                else if (messageType == "nativePlaybackUnpause" && IsNativePlaybackOverlayVisible)
+                {
+                    RestartNativePlaybackOverlayTimer();
+                }
+
                 break;
             case "nativePlaybackCancelled":
             case "nativePlaybackStopped":
             case "nativePlaybackError":
-                NativePlaybackProgressText = string.Empty;
+                ResetNativePlaybackOverlayState();
                 break;
         }
+    }
+
+    private void UpdateNativePlaybackOverlayState(JsonObject args)
+    {
+        if (args == null)
+        {
+            return;
+        }
+
+        var currentTimeMilliseconds = args.GetNamedNumber("currentTime", 0);
+        var durationMilliseconds = args.GetNamedNumber("duration", 0);
+        _isNativePlaybackPaused = args.GetNamedBoolean("paused", _isNativePlaybackPaused);
+        NativePlaybackProgressValue = Math.Max(0, currentTimeMilliseconds);
+        NativePlaybackProgressMaximum = durationMilliseconds > 0
+            ? durationMilliseconds
+            : Math.Max(1, NativePlaybackProgressValue);
+        NativePlaybackProgressText = BuildNativePlaybackProgressText(args);
+        NativePlaybackPrimaryActionSymbol = _isNativePlaybackPaused ? Symbol.Play : Symbol.Pause;
+        NativePlaybackPrimaryActionText = _isNativePlaybackPaused
+            ? _stringLocalizer.GetString("NativePlayback.Overlay.Play.Text")
+            : _stringLocalizer.GetString("NativePlayback.Overlay.Pause.Text");
     }
 
     private static string BuildNativePlaybackProgressText(JsonObject args)
@@ -658,6 +787,60 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         return currentTime + " / " + duration;
     }
 
+    private void ShowNativePlaybackOverlay()
+    {
+        if (!IsNativePlayerVisible)
+        {
+            return;
+        }
+
+        IsNativePlaybackOverlayVisible = true;
+        RestartNativePlaybackOverlayTimer();
+    }
+
+    private void HideNativePlaybackOverlay()
+    {
+        _nativePlaybackOverlayTimer.Stop();
+        IsNativePlaybackOverlayVisible = false;
+    }
+
+    private void RestartNativePlaybackOverlayTimer()
+    {
+        _nativePlaybackOverlayTimer.Stop();
+        if (IsNativePlaybackOverlayVisible && IsNativePlayerVisible && !_isNativePlaybackPaused)
+        {
+            _nativePlaybackOverlayTimer.Start();
+        }
+    }
+
+    private void ResetNativePlaybackOverlayState()
+    {
+        _nativePlaybackOverlayTimer.Stop();
+        _isNativePlaybackPaused = false;
+        IsNativePlaybackOverlayVisible = false;
+        NativePlaybackProgressText = string.Empty;
+        NativePlaybackProgressValue = 0;
+        NativePlaybackProgressMaximum = 1;
+        NativePlaybackPrimaryActionSymbol = Symbol.Play;
+        NativePlaybackPrimaryActionText = _stringLocalizer.GetString("NativePlayback.Overlay.Play.Text");
+    }
+
+    private void OnNativePlaybackOverlayTimerTick(object sender, object e)
+    {
+        _nativePlaybackOverlayTimer.Stop();
+        if (IsNativePlayerVisible)
+        {
+            HideNativePlaybackOverlay();
+        }
+    }
+
+    private void ExecuteNativePlaybackCommand(Task command)
+    {
+        _ = command.ContinueWith(
+            task => _logger.LogError(task.Exception, "Failed to apply native playback controller input."),
+            TaskContinuationOptions.OnlyOnFaulted);
+    }
+
     private static string FormatNativePlaybackTime(double milliseconds)
     {
         var timeSpan = TimeSpan.FromMilliseconds(Math.Max(0, milliseconds));
@@ -669,6 +852,8 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     {
         _navigationHandler.Dispose();
         _weakPropertyChangedListener?.Detach();
+        _nativePlaybackOverlayTimer.Stop();
+        _nativePlaybackOverlayTimer.Tick -= OnNativePlaybackOverlayTimerTick;
         _nativeVideoPlayerService.StateChanged -= OnNativeVideoPlayerStateChanged;
         _nativeVideoPlayerService.HostMessageGenerated -= OnNativePlaybackHostMessageGenerated;
         _ = _nativeVideoPlayerService.StopAsync();
