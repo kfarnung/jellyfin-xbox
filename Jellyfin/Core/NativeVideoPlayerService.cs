@@ -157,7 +157,6 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
                 _audioTrackIndices.Clear();
                 _audioTrackIndices.AddRange(audioTrackIndices);
                 _subtitleTracks.Clear();
-                _subtitleTracks.AddRange(subtitleTracks);
                 SendHostMessage("nativePlaybackAccepted", CreatePlaybackStateArgs());
 
                 if (displayInfo.Count > 0)
@@ -172,11 +171,12 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
                 }
 
                 var mediaSource = MediaSource.CreateFromUri(new Uri(playbackUrl));
-                foreach (var subtitleTrack in _subtitleTracks)
+                foreach (var subtitleTrack in subtitleTracks)
                 {
                     if (Uri.TryCreate(subtitleTrack.Url, UriKind.Absolute, out var subtitleUri))
                     {
                         mediaSource.ExternalTimedTextSources.Add(TimedTextSource.CreateFromUri(subtitleUri, subtitleTrack.Language));
+                        _subtitleTracks.Add(subtitleTrack);
                     }
                 }
 

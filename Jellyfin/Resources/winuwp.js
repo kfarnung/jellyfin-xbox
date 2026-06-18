@@ -828,9 +828,12 @@
             const requiresAudioTranscode = shouldForceNativeAudioTranscode(defaultAudioCodec);
             const requiresSubtitleTranscode = this._lastProfileSubtitleRequiresTranscode;
             const requiresTranscode = requiresAudioTranscode || requiresSubtitleTranscode;
-            const effectiveProfile = requiresAudioTranscode && !requiresSubtitleTranscode
+            const effectiveBaseProfile = requiresTranscode
                 ? createTranscodeOnlyNativeDeviceProfile(profile)
-                : (requiresSubtitleTranscode ? createSubtitlePreferredTranscodeProfile(profile) : profile);
+                : profile;
+            const effectiveProfile = requiresSubtitleTranscode
+                ? createSubtitlePreferredTranscodeProfile(effectiveBaseProfile)
+                : effectiveBaseProfile;
             this._lastProfileDefaultAudioCodec = defaultAudioCodec;
             this._lastProfileRequiresAudioTranscode = requiresAudioTranscode;
             this._lastProfileRequiresTranscode = requiresTranscode;
@@ -1232,6 +1235,15 @@
 
             if (this._pendingStop) {
                 this._pendingStop.resolve();
+            }
+
+            if (this._pendingPlay) {
+                this._pendingPlay.reject(createPlaybackError(
+                    'nativePlaybackDestroyed',
+                    'Native playback was destroyed before startup completed.',
+                    this._streamInfo
+                ));
+                this._pendingPlay = null;
             }
 
             nativePlaybackBridge.clearActivePlayer(this);
