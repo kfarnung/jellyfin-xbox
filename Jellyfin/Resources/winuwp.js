@@ -620,10 +620,10 @@
                 audioTracks: audioTracks,
                 selectedSubtitleStreamIndex: selectedSubtitleStreamIndex,
                 subtitleTracks: subtitleTracks,
-                itemName: item && item.Name ? item.Name : null,
-                seriesName: item && item.SeriesName ? item.SeriesName : null,
-                seasonNumber: item && typeof item.ParentIndexNumber === 'number' ? item.ParentIndexNumber : null,
-                episodeNumber: item && typeof item.IndexNumber === 'number' ? item.IndexNumber : null
+                ...(item && item.Name ? { itemName: item.Name } : {}),
+                ...(item && item.SeriesName ? { seriesName: item.SeriesName } : {}),
+                ...(item && typeof item.ParentIndexNumber === 'number' ? { seasonNumber: item.ParentIndexNumber } : {}),
+                ...(item && typeof item.IndexNumber === 'number' ? { episodeNumber: item.IndexNumber } : {})
             },
             displayInfo: buildDisplayInfo(streamInfo)
         };

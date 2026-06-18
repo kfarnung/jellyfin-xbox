@@ -143,8 +143,8 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
         var selectedSubtitleStreamIndex = GetTrackStreamIndex(streamInfo, "selectedSubtitleStreamIndex", subtitleTracks);
         var itemName = streamInfo.GetNamedString("itemName", string.Empty);
         var seriesName = streamInfo.GetNamedString("seriesName", string.Empty);
-        var seasonNumber = streamInfo.ContainsKey("seasonNumber") ? (int?)streamInfo.GetNamedNumber("seasonNumber") : null;
-        var episodeNumber = streamInfo.ContainsKey("episodeNumber") ? (int?)streamInfo.GetNamedNumber("episodeNumber") : null;
+        var seasonNumber = TryGetNamedInt(streamInfo, "seasonNumber");
+        var episodeNumber = TryGetNamedInt(streamInfo, "episodeNumber");
 
         _ = RunOnUiThreadAsync(async () =>
         {
@@ -924,6 +924,17 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
         });
 
         return completionSource.Task;
+    }
+
+    private static int? TryGetNamedInt(JsonObject jsonObject, string key)
+    {
+        if (jsonObject == null || !jsonObject.ContainsKey(key))
+        {
+            return null;
+        }
+
+        var value = jsonObject.GetNamedValue(key);
+        return value.ValueType == JsonValueType.Number ? (int?)value.GetNumber() : null;
     }
 
     private static long GetLong(JsonObject jsonObject, string key)
