@@ -192,4 +192,8 @@ Potresti incontrare problemi inaspettati se utilizzerai l'applicazione su PC.</v
   <data name="Settings.Logs.Title" xml:space="preserve">
     <value>File di Log</value>
   </data>
+
+  <data name="NativePlayback.Overlay.Scrubber.Text" xml:space="preserve">
+    <value>Seek</value>
+  </data>
 </root>

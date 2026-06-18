@@ -198,4 +198,8 @@ Při spuštění na počítači se můžete setkat s chybami.</value>
   <data name="Settings.Values.ForceEnableTV.Text" xml:space="preserve">
     <value>Vynutit režim TV</value>
   </data>
+
+  <data name="NativePlayback.Overlay.Scrubber.Text" xml:space="preserve">
+    <value>Seek</value>
+  </data>
 </root>

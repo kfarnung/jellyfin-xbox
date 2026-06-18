@@ -198,4 +198,8 @@
 
 კომპიუტერზე გაშვებისას, შეიძლება, შეცდომები აღმოაჩინოთ.</value>
   </data>
+
+  <data name="NativePlayback.Overlay.Scrubber.Text" xml:space="preserve">
+    <value>Seek</value>
+  </data>
 </root>

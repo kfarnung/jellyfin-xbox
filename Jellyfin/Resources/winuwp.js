@@ -619,7 +619,11 @@
                 selectedAudioStreamIndex: selectedAudioStreamIndex,
                 audioTracks: audioTracks,
                 selectedSubtitleStreamIndex: selectedSubtitleStreamIndex,
-                subtitleTracks: subtitleTracks
+                subtitleTracks: subtitleTracks,
+                itemName: item && item.Name ? item.Name : null,
+                seriesName: item && item.SeriesName ? item.SeriesName : null,
+                seasonNumber: item && typeof item.ParentIndexNumber === 'number' ? item.ParentIndexNumber : null,
+                episodeNumber: item && typeof item.IndexNumber === 'number' ? item.IndexNumber : null
             },
             displayInfo: buildDisplayInfo(streamInfo)
         };

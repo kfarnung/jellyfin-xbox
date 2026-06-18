@@ -195,4 +195,8 @@ Podczas uruchamiania na komputerze mogą wystąpić błędy.</value>
   <data name="Settings.Logs.Title" xml:space="preserve">
     <value>Pliki dziennika</value>
   </data>
+
+  <data name="NativePlayback.Overlay.Scrubber.Text" xml:space="preserve">
+    <value>Seek</value>
+  </data>
 </root>

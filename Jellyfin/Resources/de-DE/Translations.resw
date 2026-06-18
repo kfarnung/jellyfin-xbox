@@ -246,4 +246,8 @@
   <data name="Settings.Version.Text" xml:space="preserve">
     <value>Version</value>
   </data>
+
+  <data name="NativePlayback.Overlay.Scrubber.Text" xml:space="preserve">
+    <value>Seek</value>
+  </data>
 </root>

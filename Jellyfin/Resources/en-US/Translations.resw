@@ -287,6 +287,9 @@ You might encounter bugs when running on a PC.</value>
   <data name="NativePlayback.Overlay.Forward.Text" xml:space="preserve">
     <value>Forward 10s</value>
   </data>
+  <data name="NativePlayback.Overlay.Scrubber.Text" xml:space="preserve">
+    <value>Seek</value>
+  </data>
   <data name="NativePlayback.Overlay.Shortcuts.Text" xml:space="preserve">
     <value>A Show controls  D-pad navigate  B Hide/Back</value>
   </data>

@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Controls.Primitives;
 using Windows.UI.Xaml.Input;
 
 namespace Jellyfin.Controls;
@@ -14,6 +15,10 @@ namespace Jellyfin.Controls;
 /// </summary>
 public sealed partial class JellyfinWebView
 {
+    // Suppresses the ValueChanged→seek loop when the player (not the user) updates the scrubber.
+    private bool _suppressSliderSeek;
+    private bool _isPointerScrubbing;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="JellyfinWebView"/> class.
     /// </summary>
@@ -69,8 +74,54 @@ public sealed partial class JellyfinWebView
         }
     }
 
+    private void NativePlaybackScrubber_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (_suppressSliderSeek || _isPointerScrubbing)
+        {
+            return;
+        }
+
+        if (DataContext is JellyfinWebViewModel jellyfinWebViewModel)
+        {
+            jellyfinWebViewModel.RequestNativePlaybackSeekAbsolute(e.NewValue);
+        }
+    }
+
+    private void NativePlaybackScrubber_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        _isPointerScrubbing = true;
+    }
+
+    private void NativePlaybackScrubber_PointerCaptureLost(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isPointerScrubbing)
+        {
+            return;
+        }
+
+        _isPointerScrubbing = false;
+        if (DataContext is JellyfinWebViewModel jellyfinWebViewModel)
+        {
+            jellyfinWebViewModel.RequestNativePlaybackSeekAbsolute(NativePlaybackScrubber.Value);
+        }
+    }
+
     private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(JellyfinWebViewModel.NativePlaybackProgressValue)
+            || e.PropertyName == nameof(JellyfinWebViewModel.NativePlaybackProgressMaximum))
+        {
+            if (!_isPointerScrubbing && DataContext is JellyfinWebViewModel vm)
+            {
+                _suppressSliderSeek = true;
+                NativePlaybackScrubber.Maximum = vm.NativePlaybackProgressMaximum;
+                NativePlaybackScrubber.Value = vm.NativePlaybackProgressValue;
+                _suppressSliderSeek = false;
+            }
+
+            return;
+        }
+
         if (e.PropertyName != nameof(JellyfinWebViewModel.IsNativePlaybackOverlayVisible)
             && e.PropertyName != nameof(JellyfinWebViewModel.IsNativePlayerVisible))
         {

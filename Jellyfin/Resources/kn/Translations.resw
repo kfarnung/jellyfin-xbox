@@ -198,4 +198,8 @@
   <data name="Settings.Values.ForceEnableTV.Text" xml:space="preserve">
     <value>ಟಿವಿ ಮೋಡ್ ಅನ್ನು ಒತ್ತಾಯಿಸಿ</value>
   </data>
+
+  <data name="NativePlayback.Overlay.Scrubber.Text" xml:space="preserve">
+    <value>Seek</value>
+  </data>
 </root>

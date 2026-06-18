@@ -189,4 +189,8 @@ PC-n futtatva hibákba ütközhet.</value>
   <data name="ServerLookupValidation.Error.ProductName.Text" xml:space="preserve">
     <value>TermékNév ‘{0}’ nem egyezik az elvárttal ‘{1}’.</value>
   </data>
+
+  <data name="NativePlayback.Overlay.Scrubber.Text" xml:space="preserve">
+    <value>Seek</value>
+  </data>
 </root>

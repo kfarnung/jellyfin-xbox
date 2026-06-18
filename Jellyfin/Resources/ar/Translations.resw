@@ -198,4 +198,8 @@
   <data name="Settings.Values.ForceEnableTV.Text" xml:space="preserve">
     <value>فرض نمط التلفاز</value>
   </data>
+
+  <data name="NativePlayback.Overlay.Scrubber.Text" xml:space="preserve">
+    <value>Seek</value>
+  </data>
 </root>

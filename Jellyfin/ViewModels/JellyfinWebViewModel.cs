@@ -57,6 +57,10 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     private bool _isNativePlaybackOverlayVisible;
     private bool _isNativePlaybackPaused;
     private string _nativePlaybackProgressText;
+    private string _nativePlaybackTitle;
+    private string _nativePlaybackSubtitle;
+    private string _nativePlaybackElapsedText;
+    private string _nativePlaybackTotalText;
     private Symbol _nativePlaybackPrimaryActionSymbol;
     private string _nativePlaybackPrimaryActionText;
     private double _nativePlaybackProgressValue;
@@ -222,6 +226,43 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     {
         get => _nativePlaybackProgressMaximum;
         set => SetProperty(ref _nativePlaybackProgressMaximum, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the primary title shown in the native playback overlay, or <see langword="null"/> when unavailable.
+    /// </summary>
+    public string NativePlaybackTitle
+    {
+        get => _nativePlaybackTitle;
+        set => SetProperty(ref _nativePlaybackTitle, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the subtitle line shown in the native playback overlay (e.g. episode label),
+    /// or <see langword="null"/> when there is no subtitle.
+    /// </summary>
+    public string NativePlaybackSubtitle
+    {
+        get => _nativePlaybackSubtitle;
+        set => SetProperty(ref _nativePlaybackSubtitle, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the formatted elapsed time shown in the native playback overlay.
+    /// </summary>
+    public string NativePlaybackElapsedText
+    {
+        get => _nativePlaybackElapsedText;
+        set => SetProperty(ref _nativePlaybackElapsedText, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the formatted total duration shown in the native playback overlay.
+    /// </summary>
+    public string NativePlaybackTotalText
+    {
+        get => _nativePlaybackTotalText;
+        set => SetProperty(ref _nativePlaybackTotalText, value);
     }
 
     /// <summary>
@@ -398,8 +439,14 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
             case VirtualKey.GamepadLeftThumbstickDown:
             case VirtualKey.Up:
             case VirtualKey.Down:
-                ShowNativePlaybackOverlay();
-                return true;
+                if (!IsNativePlaybackOverlayVisible)
+                {
+                    ShowNativePlaybackOverlay();
+                    return true;
+                }
+
+                RestartNativePlaybackOverlayTimer();
+                return false;
             case MediaPlayPauseKey:
                 RequestNativePlaybackPlayPause();
                 return true;
@@ -426,6 +473,12 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
     {
         ShowNativePlaybackOverlay();
         ExecuteNativePlaybackCommand(_nativeVideoPlayerService.SeekRelativeAsync(offsetMilliseconds));
+    }
+
+    internal void RequestNativePlaybackSeekAbsolute(double positionMilliseconds)
+    {
+        ShowNativePlaybackOverlay();
+        ExecuteNativePlaybackCommand(_nativeVideoPlayerService.SeekAsync(positionMilliseconds));
     }
 
     private async Task InitializeWebViewAndNavigateTo(Uri uri)
@@ -748,6 +801,9 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         {
             case "nativePlaybackAccepted":
             case "nativePlaybackStarted":
+                UpdateNativePlaybackOverlayState(args);
+                UpdateNativePlaybackMetadata(args);
+                break;
             case "nativePlaybackTimeUpdate":
             case "nativePlaybackPause":
             case "nativePlaybackUnpause":
@@ -784,11 +840,47 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         NativePlaybackProgressMaximum = durationMilliseconds > 0
             ? durationMilliseconds
             : Math.Max(1, NativePlaybackProgressValue);
+        NativePlaybackElapsedText = FormatNativePlaybackTime(currentTimeMilliseconds);
+        NativePlaybackTotalText = durationMilliseconds > 0 ? FormatNativePlaybackTime(durationMilliseconds) : "--:--";
         NativePlaybackProgressText = BuildNativePlaybackProgressText(args);
         NativePlaybackPrimaryActionSymbol = _isNativePlaybackPaused ? Symbol.Play : Symbol.Pause;
         NativePlaybackPrimaryActionText = _isNativePlaybackPaused
             ? _stringLocalizer.GetString("NativePlayback.Overlay.Play.Text")
             : _stringLocalizer.GetString("NativePlayback.Overlay.Pause.Text");
+    }
+
+    private void UpdateNativePlaybackMetadata(JsonObject args)
+    {
+        if (args == null)
+        {
+            return;
+        }
+
+        var itemName = args.GetNamedString("itemName", string.Empty);
+        var seriesName = args.GetNamedString("seriesName", string.Empty);
+
+        if (!string.IsNullOrEmpty(seriesName))
+        {
+            NativePlaybackTitle = seriesName;
+            if (args.ContainsKey("seasonNumber") && args.ContainsKey("episodeNumber"))
+            {
+                var season = (int)args.GetNamedNumber("seasonNumber");
+                var episode = (int)args.GetNamedNumber("episodeNumber");
+                var episodeLabel = $"S{season:D2}E{episode:D2}";
+                NativePlaybackSubtitle = string.IsNullOrEmpty(itemName)
+                    ? episodeLabel
+                    : $"{episodeLabel} \u2013 {itemName}";
+            }
+            else
+            {
+                NativePlaybackSubtitle = string.IsNullOrEmpty(itemName) ? null : itemName;
+            }
+        }
+        else if (!string.IsNullOrEmpty(itemName))
+        {
+            NativePlaybackTitle = itemName;
+            NativePlaybackSubtitle = null;
+        }
     }
 
     private static string BuildNativePlaybackProgressText(JsonObject args)
@@ -841,6 +933,10 @@ public sealed class JellyfinWebViewModel : ObservableRecipient, IDisposable, IRe
         _nativePlaybackOverlayTimer.Stop();
         _isNativePlaybackPaused = false;
         IsNativePlaybackOverlayVisible = false;
+        NativePlaybackTitle = null;
+        NativePlaybackSubtitle = null;
+        NativePlaybackElapsedText = string.Empty;
+        NativePlaybackTotalText = string.Empty;
         NativePlaybackProgressText = string.Empty;
         NativePlaybackProgressValue = 0;
         NativePlaybackProgressMaximum = 1;

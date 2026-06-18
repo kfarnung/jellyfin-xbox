@@ -40,6 +40,10 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
     private bool _isPlaybackActive;
     private bool _isVisible;
     private MediaPlaybackState _lastPlaybackState = MediaPlaybackState.None;
+    private string _itemName = string.Empty;
+    private string _seriesName = string.Empty;
+    private int? _seasonNumber;
+    private int? _episodeNumber;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NativeVideoPlayerService"/> class.
@@ -137,6 +141,10 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
         var selectedAudioStreamIndex = GetTrackStreamIndex(streamInfo, "selectedAudioStreamIndex", audioTrackIndices);
         var subtitleTracks = GetSubtitleTracks(GetNamedArray(streamInfo, "subtitleTracks") ?? GetNamedArray(streamInfo, "textTracks") ?? new JsonArray());
         var selectedSubtitleStreamIndex = GetTrackStreamIndex(streamInfo, "selectedSubtitleStreamIndex", subtitleTracks);
+        var itemName = streamInfo.GetNamedString("itemName", string.Empty);
+        var seriesName = streamInfo.GetNamedString("seriesName", string.Empty);
+        var seasonNumber = streamInfo.ContainsKey("seasonNumber") ? (int?)streamInfo.GetNamedNumber("seasonNumber") : null;
+        var episodeNumber = streamInfo.ContainsKey("episodeNumber") ? (int?)streamInfo.GetNamedNumber("episodeNumber") : null;
 
         _ = RunOnUiThreadAsync(async () =>
         {
@@ -155,10 +163,14 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
                 _pauseWhenReady = false;
                 _selectedAudioStreamIndex = selectedAudioStreamIndex;
                 _selectedSubtitleStreamIndex = selectedSubtitleStreamIndex;
+                _itemName = itemName;
+                _seriesName = seriesName;
+                _seasonNumber = seasonNumber;
+                _episodeNumber = episodeNumber;
                 _audioTrackIndices.Clear();
                 _audioTrackIndices.AddRange(audioTrackIndices);
                 _subtitleTracks.Clear();
-                SendHostMessage("nativePlaybackAccepted", CreatePlaybackStateArgs());
+                SendHostMessage("nativePlaybackAccepted", CreatePlaybackStartArgs());
 
                 if (displayInfo.Count > 0)
                 {
@@ -449,6 +461,10 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
             IsVisible = false;
             IsPlaybackActive = false;
             _mediaPlayer.SystemMediaTransportControls.PlaybackStatus = MediaPlaybackStatus.Stopped;
+            _itemName = string.Empty;
+            _seriesName = string.Empty;
+            _seasonNumber = null;
+            _episodeNumber = null;
             if (_hasFullscreenSession)
             {
                 await _fullScreenManager.DisableFullScreen().ConfigureAwait(true);
@@ -590,7 +606,7 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
                 }
 
                 _progressTimer?.Start();
-                SendHostMessage("nativePlaybackStarted", CreatePlaybackStateArgs());
+                SendHostMessage("nativePlaybackStarted", CreatePlaybackStartArgs());
             }
             catch (Exception exception)
             {
@@ -710,6 +726,32 @@ public sealed class NativeVideoPlayerService : INativeVideoPlayerService, IDispo
         }
 
         SendHostMessage("nativePlaybackTimeUpdate", CreatePlaybackStateArgs());
+    }
+
+    private JsonObject CreatePlaybackStartArgs()
+    {
+        var args = CreatePlaybackStateArgs();
+        if (!string.IsNullOrEmpty(_itemName))
+        {
+            args["itemName"] = JsonValue.CreateStringValue(_itemName);
+        }
+
+        if (!string.IsNullOrEmpty(_seriesName))
+        {
+            args["seriesName"] = JsonValue.CreateStringValue(_seriesName);
+        }
+
+        if (_seasonNumber.HasValue)
+        {
+            args["seasonNumber"] = JsonValue.CreateNumberValue(_seasonNumber.Value);
+        }
+
+        if (_episodeNumber.HasValue)
+        {
+            args["episodeNumber"] = JsonValue.CreateNumberValue(_episodeNumber.Value);
+        }
+
+        return args;
     }
 
     private JsonObject CreatePlaybackStateArgs()
