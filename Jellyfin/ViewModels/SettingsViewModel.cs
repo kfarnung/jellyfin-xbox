@@ -69,8 +69,11 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         try
         {
             CurrentHdmiDisplayInformation = HdmiDisplayInformation.GetForCurrentView();
-            CurrentDisplayMode = CurrentHdmiDisplayInformation.GetCurrentDisplayMode();
-            PossibleDisplayModes = new(CurrentHdmiDisplayInformation.GetSupportedDisplayModes());
+            if (CurrentHdmiDisplayInformation != null)
+            {
+                CurrentDisplayMode = CurrentHdmiDisplayInformation.GetCurrentDisplayMode();
+                PossibleDisplayModes = new(CurrentHdmiDisplayInformation.GetSupportedDisplayModes());
+            }
         }
         catch (Exception e)
         {
